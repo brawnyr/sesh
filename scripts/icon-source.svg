@@ -1,0 +1,57 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<svg viewBox="0 0 256 256" xmlns="http://www.w3.org/2000/svg">
+  <!-- rounded square background -->
+  <rect width="256" height="256" rx="48" fill="#150e0a"/>
+
+  <!-- inner deck plate -->
+  <rect x="22" y="58" width="212" height="152" rx="20"
+        fill="#2a1d14" stroke="#0a0604" stroke-width="4"/>
+
+  <!-- subtle dithered crema bleed at the top of the plate -->
+  <path d="M 38 70 Q 128 84 218 70" stroke="#4a3322" stroke-width="2"
+        fill="none" stroke-linecap="round" opacity="0.7"/>
+
+  <!-- LEFT REEL -->
+  <g transform="translate(80, 134)">
+    <!-- outer body -->
+    <circle r="44" fill="#0a0604"/>
+    <circle r="44" fill="none" stroke="#ff9a3c" stroke-width="7"/>
+    <!-- six spokes -->
+    <g stroke="#ff9a3c" stroke-width="6" stroke-linecap="round">
+      <line x1="-32" y1="0" x2="-12" y2="0"/>
+      <line x1="32" y1="0" x2="12" y2="0"/>
+      <line x1="-16" y1="-28" x2="-6" y2="-10"/>
+      <line x1="16" y1="-28" x2="6" y2="-10"/>
+      <line x1="-16" y1="28" x2="-6" y2="10"/>
+      <line x1="16" y1="28" x2="6" y2="10"/>
+    </g>
+    <!-- center hub -->
+    <circle r="12" fill="#ff9a3c"/>
+    <circle r="5" fill="#150e0a"/>
+  </g>
+
+  <!-- RIGHT REEL -->
+  <g transform="translate(176, 134)">
+    <circle r="44" fill="#0a0604"/>
+    <circle r="44" fill="none" stroke="#ff9a3c" stroke-width="7"/>
+    <g stroke="#ff9a3c" stroke-width="6" stroke-linecap="round">
+      <line x1="-32" y1="0" x2="-12" y2="0"/>
+      <line x1="32" y1="0" x2="12" y2="0"/>
+      <line x1="-16" y1="-28" x2="-6" y2="-10"/>
+      <line x1="16" y1="-28" x2="6" y2="-10"/>
+      <line x1="-16" y1="28" x2="-6" y2="10"/>
+      <line x1="16" y1="28" x2="6" y2="10"/>
+    </g>
+    <circle r="12" fill="#ff9a3c"/>
+    <circle r="5" fill="#150e0a"/>
+  </g>
+
+  <!-- tape strand crossing between the reels -->
+  <path d="M 124 124 Q 128 110 132 124" stroke="#c5a26a" stroke-width="3"
+        fill="none" stroke-linecap="round"/>
+
+  <!-- record indicator -->
+  <circle cx="128" cy="192" r="7" fill="#ff4d2e"/>
+  <circle cx="128" cy="192" r="7" fill="none" stroke="#ff7a5c"
+          stroke-width="2" opacity="0.7"/>
+</svg>
