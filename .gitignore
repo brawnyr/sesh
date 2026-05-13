@@ -7,6 +7,9 @@ dist-ssr
 # TS incremental build info
 *.tsbuildinfo
 
+# Local-only icon picker (Win98 icon pack + preview HTML)
+icon-preview
+
 # tauri
 src-tauri/target
 src-tauri/gen/schemas

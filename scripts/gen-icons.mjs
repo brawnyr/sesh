@@ -1,4 +1,5 @@
-// Rasterize scripts/icon-source.svg to the PNG/ICO/ICNS bundle Tauri expects.
+// Generate all Tauri-bundle icon files from the pixel-art source PNGs.
+// Uses nearest-neighbor scaling so the pixel art stays crisp at every size.
 import { mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { Buffer } from "node:buffer";
 import { dirname, join } from "node:path";
@@ -7,15 +8,22 @@ import sharp from "sharp";
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const ICONS_DIR = join(__dirname, "..", "src-tauri", "icons");
-const SRC_SVG = join(__dirname, "icon-source.svg");
+const SRC_32 = join(__dirname, "icon-source-32.png");
+const SRC_16 = join(__dirname, "icon-source-16.png");
 
 mkdirSync(ICONS_DIR, { recursive: true });
 
-const svg = readFileSync(SRC_SVG);
+const src32 = readFileSync(SRC_32);
+const src16 = readFileSync(SRC_16);
 
-async function rasterize(size) {
-  return await sharp(svg, { density: 384 })
-    .resize(size, size, { fit: "contain", background: { r: 0, g: 0, b: 0, alpha: 0 } })
+// nearest-neighbor scale, square output
+async function nearest(buf, size) {
+  return await sharp(buf)
+    .resize(size, size, {
+      kernel: sharp.kernel.nearest,
+      fit: "contain",
+      background: { r: 0, g: 0, b: 0, alpha: 0 },
+    })
     .png({ compressionLevel: 9 })
     .toBuffer();
 }
@@ -38,8 +46,8 @@ function makeIco(entries) {
     dir[base + 1] = dim;
     dir[base + 2] = 0;
     dir[base + 3] = 0;
-    dir.writeUInt16LE(1, base + 4); // planes
-    dir.writeUInt16LE(32, base + 6); // bit count
+    dir.writeUInt16LE(1, base + 4);
+    dir.writeUInt16LE(32, base + 6);
     dir.writeUInt32LE(entry.png.length, base + 8);
     dir.writeUInt32LE(offset, base + 12);
     data.push(entry.png);
@@ -49,7 +57,6 @@ function makeIco(entries) {
 }
 
 function makeIcns(pngBuf) {
-  // Single ic08 (256x256) entry — modern macOS reads this fine.
   const type = Buffer.from("ic08", "ascii");
   const lenBuf = Buffer.alloc(4);
   lenBuf.writeUInt32BE(8 + pngBuf.length, 0);
@@ -60,36 +67,36 @@ function makeIcns(pngBuf) {
   return Buffer.concat([magic, totalLen, entry]);
 }
 
-const sizes = [
-  { name: "32x32.png", size: 32 },
-  { name: "128x128.png", size: 128 },
-  { name: "128x128@2x.png", size: 256 },
-];
+// Everything is re-encoded through sharp so PNGs land at 8-bit RGBA (the
+// Win98 sources are 4-bit indexed which Tauri's icon decoder rejects).
+const png32 = await nearest(src32, 32);
+const png128 = await nearest(src32, 128);
+const png256 = await nearest(src32, 256);
+const png1024 = await nearest(src32, 1024);
 
-const rendered = {};
-for (const o of sizes) {
-  const buf = await rasterize(o.size);
-  writeFileSync(join(ICONS_DIR, o.name), buf);
-  rendered[o.size] = buf;
-  console.log("wrote", o.name);
-}
+writeFileSync(join(ICONS_DIR, "32x32.png"), png32);
+writeFileSync(join(ICONS_DIR, "128x128.png"), png128);
+writeFileSync(join(ICONS_DIR, "128x128@2x.png"), png256);
+writeFileSync(join(ICONS_DIR, "icon-1024.png"), png1024);
+console.log("wrote 32x32 / 128x128 / 128x128@2x / icon-1024 PNGs");
 
-// ICO with multiple sizes so Windows can pick its own at every UI scale.
-const icoSizes = [16, 24, 32, 48, 64, 128, 256];
-const icoEntries = [];
-for (const s of icoSizes) {
-  const buf = rendered[s] ?? (await rasterize(s));
-  icoEntries.push({ size: s, png: buf });
-}
-writeFileSync(join(ICONS_DIR, "icon.ico"), makeIco(icoEntries));
-console.log("wrote icon.ico (multi-size)");
+// Multi-size ICO. Native 16 for small UI, scaled 32 for the rest.
+const ico16 = await nearest(src16, 16);
+const ico32 = png32;
+const ico64 = await nearest(src32, 64);
+const ico128 = png128;
+const ico256 = png256;
+writeFileSync(
+  join(ICONS_DIR, "icon.ico"),
+  makeIco([
+    { size: 16, png: ico16 },
+    { size: 32, png: ico32 },
+    { size: 64, png: ico64 },
+    { size: 128, png: ico128 },
+    { size: 256, png: ico256 },
+  ]),
+);
+console.log("wrote icon.ico (multi-size: 16/32/64/128/256)");
 
-// ICNS with a 256x256 image
-const icns256 = rendered[256] ?? (await rasterize(256));
-writeFileSync(join(ICONS_DIR, "icon.icns"), makeIcns(icns256));
+writeFileSync(join(ICONS_DIR, "icon.icns"), makeIcns(png256));
 console.log("wrote icon.icns");
-
-// High-res master that's useful for store listings / `tauri icon` redoes
-const hi = await rasterize(1024);
-writeFileSync(join(ICONS_DIR, "icon-1024.png"), hi);
-console.log("wrote icon-1024.png");
