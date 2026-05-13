@@ -80,7 +80,10 @@ export function App() {
   const [devices, setDevices] = useState<InputDevice[]>([]);
   const [takes, setTakes] = useState<TakeMeta[]>([]);
   const [takesDir, setTakesDir] = useState<string>("");
-  const [meter, setMeter] = useState(0);
+  const [peakDb, setPeakDb] = useState(-90);
+  const [rmsDb, setRmsDb] = useState(-90);
+  const [peakHoldDb, setPeakHoldDb] = useState(-90);
+  const [clipped, setClipped] = useState(false);
   const [elapsed, setElapsed] = useState(0);
   const [barProgress, setBarProgress] = useState(0);
   const [error, setError] = useState<string | null>(null);
@@ -126,24 +129,70 @@ export function App() {
     return off;
   }, [metronome, prefs.bpm]);
 
-  // Subscribe to level meter events from Rust (smoothed)
+  // dBFS meter with PPM-style ballistics + peak-hold
   useEffect(() => {
+    const DB_FLOOR = -90;
+    const HOLD_MS = 1500;
+    const HOLD_DECAY_DB_PER_S = 12;
+    const RELEASE_DB_PER_S = 26;
+    const CLIP_HIDE_MS = 700;
+
     let unlisten: (() => void) | null = null;
     let raf = 0;
-    let target = 0;
-    let current = 0;
-    const animate = () => {
+    let lastFrame = performance.now();
+    let displayPeak = DB_FLOOR;
+    let displayRms = DB_FLOOR;
+    let targetPeak = DB_FLOOR;
+    let targetRms = DB_FLOOR;
+    let hold = DB_FLOOR;
+    let holdSetAt = 0;
+    let clipHideAt = 0;
+
+    const animate = (now: number) => {
       raf = requestAnimationFrame(animate);
-      current = current * 0.8 + target * 0.2;
-      target *= 0.92;
-      setMeter(current);
+      const dt = Math.min(0.1, (now - lastFrame) / 1000);
+      lastFrame = now;
+
+      // fast attack, smooth release
+      displayPeak =
+        targetPeak >= displayPeak
+          ? targetPeak
+          : Math.max(targetPeak, displayPeak - RELEASE_DB_PER_S * dt);
+      displayRms =
+        targetRms >= displayRms
+          ? targetRms
+          : Math.max(targetRms, displayRms - RELEASE_DB_PER_S * dt);
+
+      // peak hold: lift instantly, hang for HOLD_MS, then decay
+      if (targetPeak >= hold) {
+        hold = targetPeak;
+        holdSetAt = now;
+      } else if (now - holdSetAt > HOLD_MS) {
+        hold = Math.max(targetPeak, hold - HOLD_DECAY_DB_PER_S * dt);
+      }
+
+      setPeakDb(displayPeak);
+      setRmsDb(displayRms);
+      setPeakHoldDb(hold);
+
+      if (clipHideAt && now > clipHideAt) {
+        clipHideAt = 0;
+        setClipped(false);
+      }
     };
     raf = requestAnimationFrame(animate);
-    onMeter((peak) => {
-      if (peak > target) target = peak;
+
+    onMeter((r) => {
+      targetPeak = r.peak_db;
+      targetRms = r.rms_db;
+      if (r.clipped) {
+        clipHideAt = performance.now() + CLIP_HIDE_MS;
+        setClipped(true);
+      }
     }).then((u) => {
       unlisten = u;
     });
+
     return () => {
       cancelAnimationFrame(raf);
       unlisten?.();
@@ -183,6 +232,15 @@ export function App() {
     void refreshSettings();
     void refreshTakes();
   }, []);
+
+  // Keep the Rust-side input stream in sync with the picked device so meter
+  // is live even when not recording.
+  useEffect(() => {
+    if (!prefs.device) return;
+    seshApi
+      .setInputDevice(prefs.device)
+      .catch((e: unknown) => setError(String(e)));
+  }, [prefs.device]);
 
   async function refreshDevices() {
     try {
@@ -264,7 +322,7 @@ export function App() {
       if (prefs.metroOn) await metronome.start();
 
       const beginCapture = async () => {
-        await seshApi.startRecording(prefs.device);
+        await seshApi.startRecording();
         recordStartRef.current = performance.now();
         if (!barStartRef.current) barStartRef.current = performance.now();
         setState("recording");
@@ -489,7 +547,12 @@ export function App() {
                 <div className="font-pixel text-[10px] uppercase tracking-widest text-cream-400">
                   level
                 </div>
-                <VuMeter level={meter} />
+                <VuMeter
+                  peakDb={peakDb}
+                  rmsDb={rmsDb}
+                  peakHoldDb={peakHoldDb}
+                  clipped={clipped}
+                />
               </div>
             </section>
           </div>

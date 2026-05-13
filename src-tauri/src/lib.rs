@@ -1,14 +1,14 @@
 mod audio;
 
-use audio::{AudioController, InputDevice, TakeInfo};
+use audio::{AudioController, DeviceState, InputDevice, TakeInfo};
 use parking_lot::Mutex;
 use serde::{Deserialize, Serialize};
 use std::fs;
 use std::path::PathBuf;
-use tauri::{AppHandle, Manager, State};
+use tauri::{Manager, State};
 
 pub struct AppState {
-    audio: AudioController,
+    audio: Mutex<Option<AudioController>>,
     takes_dir: Mutex<PathBuf>,
 }
 
@@ -23,6 +23,15 @@ pub struct TakeMeta {
     pub name: String,
     pub bytes: u64,
     pub modified_unix: u64,
+}
+
+fn with_audio<R>(
+    state: &State<AppState>,
+    f: impl FnOnce(&AudioController) -> Result<R, String>,
+) -> Result<R, String> {
+    let guard = state.audio.lock();
+    let audio = guard.as_ref().ok_or_else(|| "audio not ready".to_string())?;
+    f(audio)
 }
 
 #[tauri::command]
@@ -49,23 +58,32 @@ fn set_takes_dir(state: State<AppState>, dir: String) -> Result<Settings, String
 }
 
 #[tauri::command]
-fn start_recording(
-    app: AppHandle,
+fn set_input_device(
     state: State<AppState>,
     device_name: Option<String>,
-) -> Result<TakeInfo, String> {
+) -> Result<DeviceState, String> {
+    with_audio(&state, |audio| audio.set_device(device_name))
+}
+
+#[tauri::command]
+fn start_recording(state: State<AppState>) -> Result<TakeInfo, String> {
     let takes_dir = state.takes_dir.lock().clone();
-    state.audio.start(app, device_name, takes_dir)
+    with_audio(&state, |audio| audio.start_recording(takes_dir))
 }
 
 #[tauri::command]
 fn stop_recording(state: State<AppState>) -> Result<TakeInfo, String> {
-    state.audio.stop()
+    with_audio(&state, |audio| audio.stop_recording())
 }
 
 #[tauri::command]
 fn is_recording(state: State<AppState>) -> bool {
-    state.audio.is_recording()
+    state
+        .audio
+        .lock()
+        .as_ref()
+        .map(|a| a.is_recording())
+        .unwrap_or(false)
 }
 
 #[tauri::command]
@@ -139,13 +157,14 @@ pub fn run() {
         .plugin(tauri_plugin_dialog::init())
         .plugin(tauri_plugin_opener::init())
         .manage(AppState {
-            audio: AudioController::spawn(),
+            audio: Mutex::new(None),
             takes_dir: Mutex::new(initial_dir),
         })
         .invoke_handler(tauri::generate_handler![
             list_input_devices,
             get_settings,
             set_takes_dir,
+            set_input_device,
             start_recording,
             stop_recording,
             is_recording,
@@ -153,6 +172,10 @@ pub fn run() {
             reveal_in_folder,
         ])
         .setup(|app| {
+            let handle = app.handle().clone();
+            let controller = AudioController::spawn(handle);
+            let state = app.state::<AppState>();
+            *state.audio.lock() = Some(controller);
             let _ = app.get_webview_window("main");
             Ok(())
         })
