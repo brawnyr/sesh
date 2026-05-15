@@ -40,9 +40,6 @@ export function DevicePanel({
 
   return (
     <div className="flex flex-col gap-2 relative" ref={containerRef}>
-      <div className="font-pixel text-[10px] uppercase tracking-widest text-cream-400">
-        input
-      </div>
       <div className="flex gap-1">
         <button
           type="button"
@@ -50,7 +47,6 @@ export function DevicePanel({
           onClick={() => setOpen((o) => !o)}
           disabled={disabled}
           title={current?.name ?? ""}
-          style={{ minWidth: "18rem" }}
         >
           <span className="truncate font-mono normal-case tracking-normal text-cream-100">
             {label}

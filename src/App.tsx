@@ -21,6 +21,7 @@ import { BeatStrip } from "./components/BeatStrip";
 import { VuMeter } from "./components/VuMeter";
 import { Splash, type SplashEvent } from "./components/Splash";
 import { TakesShelf } from "./components/TakesShelf";
+import { RecordOrb } from "./components/RecordOrb";
 
 const PREFS_KEY = "sesh:prefs:v1";
 
@@ -83,6 +84,7 @@ export function App() {
   const [peakHoldDb, setPeakHoldDb] = useState(-90);
   const [clipped, setClipped] = useState(false);
   const [elapsed, setElapsed] = useState(0);
+  const [barProgress, setBarProgress] = useState(0);
   const [error, setError] = useState<string | null>(null);
   const [splash, setSplash] = useState<SplashEvent | null>(null);
 
@@ -90,13 +92,12 @@ export function App() {
   const barStartRef = useRef<number | null>(null);
   const armTimerRef = useRef<number | null>(null);
   const recordRectRef = useRef<DOMRect | null>(null);
-  const recordBtnRef = useRef<HTMLButtonElement | null>(null);
+  const recordBtnRef = useRef<HTMLDivElement | null>(null);
   const tapTimesRef = useRef<number[]>([]);
 
   const [editingBpm, setEditingBpm] = useState(false);
   const [bpmInput, setBpmInput] = useState("");
 
-  // Persist prefs whenever they change
   useEffect(() => {
     savePrefs(prefs);
   }, [prefs]);
@@ -105,7 +106,6 @@ export function App() {
     setPrefs((p) => ({ ...p, ...patch }));
   }, []);
 
-  // Push metronome options whenever they change
   useEffect(() => {
     metronome.setOptions({
       bpm: prefs.bpm,
@@ -115,14 +115,12 @@ export function App() {
     });
   }, [metronome, prefs.bpm, prefs.metroVolume, prefs.voice]);
 
-  // Subscribe to beat events for visual sync + bar reset
   useEffect(() => {
     const off = metronome.onBeat((beat, downbeat) => {
       setActiveBeat(beat);
       if (downbeat) {
         barStartRef.current = performance.now();
       }
-      // brief release after a beat
       window.setTimeout(() => {
         setActiveBeat((prev) => (prev === beat ? null : prev));
       }, Math.max(80, (60_000 / prefs.bpm) * 0.3));
@@ -130,7 +128,6 @@ export function App() {
     return off;
   }, [metronome, prefs.bpm]);
 
-  // dBFS meter with PPM-style ballistics + peak-hold
   useEffect(() => {
     const DB_FLOOR = -90;
     const HOLD_MS = 1500;
@@ -154,7 +151,6 @@ export function App() {
       const dt = Math.min(0.1, (now - lastFrame) / 1000);
       lastFrame = now;
 
-      // fast attack, smooth release
       displayPeak =
         targetPeak >= displayPeak
           ? targetPeak
@@ -164,7 +160,6 @@ export function App() {
           ? targetRms
           : Math.max(targetRms, displayRms - RELEASE_DB_PER_S * dt);
 
-      // peak hold: lift instantly, hang for HOLD_MS, then decay
       if (targetPeak >= hold) {
         hold = targetPeak;
         holdSetAt = now;
@@ -200,32 +195,38 @@ export function App() {
     };
   }, []);
 
-  // Elapsed timer while running
+  // Elapsed timer + bar progress while running
   useEffect(() => {
     if (state === "idle") {
       setElapsed(0);
+      setBarProgress(0);
       return;
     }
     let raf = 0;
     const tick = () => {
       raf = requestAnimationFrame(tick);
+      const now = performance.now();
       if (state === "recording" && recordStartRef.current !== null) {
-        setElapsed((performance.now() - recordStartRef.current) / 1000);
+        setElapsed((now - recordStartRef.current) / 1000);
+      }
+      if (barStartRef.current !== null) {
+        const barMs = (60_000 / prefs.bpm) * BEATS_PER_BAR;
+        const dt = (now - barStartRef.current) % barMs;
+        setBarProgress(dt / barMs);
+      } else {
+        setBarProgress(0);
       }
     };
     raf = requestAnimationFrame(tick);
     return () => cancelAnimationFrame(raf);
-  }, [state]);
+  }, [state, prefs.bpm]);
 
-  // Initial load
   useEffect(() => {
     void refreshDevices();
     void refreshSettings();
     void refreshTakes();
   }, []);
 
-  // Keep the Rust-side input stream in sync with the picked device so meter
-  // is live even when not recording.
   useEffect(() => {
     if (!prefs.device) return;
     seshApi
@@ -278,7 +279,8 @@ export function App() {
   }, [metronome]);
 
   const triggerSplash = useCallback(() => {
-    const rect = recordRectRef.current ?? recordBtnRef.current?.getBoundingClientRect();
+    const rect =
+      recordRectRef.current ?? recordBtnRef.current?.getBoundingClientRect();
     const x = rect ? rect.left + rect.width / 2 : window.innerWidth / 2;
     const y = rect ? rect.top + rect.height / 2 : window.innerHeight / 2;
     setSplash({ id: Date.now() + Math.random(), x, y });
@@ -329,7 +331,6 @@ export function App() {
       return;
     }
 
-    // idle → arming/recording
     try {
       if (prefs.metroOn) await metronome.start();
 
@@ -365,7 +366,6 @@ export function App() {
     }
   }, [state, prefs, metronome, cancelArming, triggerSplash]);
 
-  // Spacebar = toggle record
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
       if (e.code === "Space" && !e.repeat) {
@@ -393,18 +393,15 @@ export function App() {
 
   const stateLabel = useMemo(() => {
     switch (state) {
-      case "idle":
-        return "ready";
-      case "arming":
-        return "count-in";
-      case "recording":
-        return "recording";
-      case "stopping":
-        return "saving…";
+      case "idle":      return "ready";
+      case "arming":    return "count-in";
+      case "recording": return "rolling";
+      case "stopping":  return "saving…";
     }
   }, [state]);
 
   const isBusy = state !== "idle";
+  const reelsSpin = state === "recording" || state === "arming";
 
   return (
     <div className="h-screen w-screen relative overflow-hidden">
@@ -412,187 +409,89 @@ export function App() {
       <div className="field-veil" />
 
       {error && (
-        <div className="banner absolute top-3 left-1/2 -translate-x-1/2 z-50 px-3 py-1.5 font-mono text-sm rounded">
+        <div className="banner absolute top-3 left-1/2 -translate-x-1/2 z-50 px-3 py-1.5 text-sm">
           {error}
         </div>
       )}
 
-      <div className="relative z-10 h-full flex flex-col">
-        {/* TOP BAR */}
-        <header className="px-6 py-3 flex items-center gap-4">
-          <div className="flex items-center gap-2 font-display text-xl text-cream-50">
-            <span
-              className={`inline-block w-2.5 h-2.5 rounded-full transition-colors ${
-                state === "recording"
-                  ? "bg-rec-500 shadow-rec-glow"
-                  : state === "arming"
-                    ? "bg-crema-400 shadow-crema-glow"
-                    : "bg-crema-400"
-              }`}
-            />
-            sesh
+      <div className="relative z-10 h-full flex flex-col overflow-y-auto scrollbar-thin">
+        {/* ─── NAMEPLATE HEADER ─── */}
+        <header className="px-6 pt-5 pb-3 flex items-center justify-center gap-4">
+          <div className="nameplate">
+            <span className={`nameplate-led ${state}`} />
+            <span className="nameplate-text">sesh</span>
+            <span className="nameplate-sub">session recorder</span>
           </div>
-          <div
-            className={`font-pixel text-xs uppercase tracking-[0.25em] px-2 py-0.5 rounded transition-colors ${
+          <span
+            className={`status-pill ${
               state === "recording"
-                ? "text-rec-400 bg-rec-600/15"
+                ? "recording"
                 : state === "arming"
-                  ? "text-crema-400 bg-crema-500/15"
-                  : "text-cream-400"
+                  ? "arming"
+                  : ""
             }`}
           >
-            {stateLabel}
-          </div>
-          <div
-            className={`ml-2 readout text-2xl font-pixel ${state === "recording" ? "rec" : "dim"}`}
-          >
-            {formatDuration(elapsed)}
-          </div>
-          <div className="ml-auto flex items-center gap-2 font-mono text-xs text-cream-400">
-            <span className="kbd">space</span>
-            <span>record</span>
-            <span className="opacity-40">·</span>
-            <span className="kbd">tab</span>
-            <span>dial</span>
-          </div>
+            <span>{stateLabel}</span>
+          </span>
         </header>
 
-        {/* MAIN STAGE */}
-        <main className="flex-1 grid place-items-center px-6 pb-4">
-          <div className="w-full max-w-5xl grid grid-cols-1 md:grid-cols-[1fr_1fr] gap-6 items-start">
-            {/* LEFT: combined transport */}
-            <section className="panel p-5 flex flex-col gap-5">
-              <div className="font-pixel text-[10px] uppercase tracking-widest text-cream-400">
-                transport
-              </div>
+        {/* ─── HERO: TAPE WINDOW + RECORD ORB ─── */}
+        <main className="px-6 flex-1 flex flex-col items-center gap-6">
+          <div className="w-full max-w-3xl">
+            <TapeWindow
+              elapsed={elapsed}
+              state={state}
+              bpm={prefs.bpm}
+              activeBeat={activeBeat}
+              reelsSpin={reelsSpin}
+              editingBpm={editingBpm}
+              bpmInput={bpmInput}
+              setEditingBpm={setEditingBpm}
+              setBpmInput={setBpmInput}
+              commitBpm={commitBpm}
+              tapTempo={tapTempo}
+              isBusy={isBusy}
+            />
+          </div>
 
-              <div className="flex flex-col gap-3">
-                <div className="font-pixel text-[10px] uppercase tracking-widest text-cream-400">
-                  tempo
-                </div>
-                <div className="flex items-center justify-between gap-4 flex-wrap">
-                  <div className="flex items-baseline gap-2">
-                    {editingBpm ? (
-                      <input
-                        autoFocus
-                        type="number"
-                        min={40}
-                        max={240}
-                        value={bpmInput}
-                        onChange={(e) => setBpmInput(e.target.value)}
-                        onBlur={() => {
-                          const n = parseFloat(bpmInput);
-                          if (!isNaN(n)) commitBpm(n);
-                          setEditingBpm(false);
-                        }}
-                        onKeyDown={(e) => {
-                          if (e.key === "Enter") e.currentTarget.blur();
-                          if (e.key === "Escape") setEditingBpm(false);
-                        }}
-                        className="w-24 text-center bg-roast-950 border-2 border-roast-700 readout text-3xl font-pixel py-0.5"
-                      />
-                    ) : (
-                      <button
-                        type="button"
-                        onClick={() => {
-                          setBpmInput(String(Math.round(prefs.bpm)));
-                          setEditingBpm(true);
-                        }}
-                        disabled={isBusy}
-                        className="readout text-4xl font-pixel px-2 py-0.5 hover:bg-roast-800/60 rounded transition-colors"
-                        title="type a BPM"
-                      >
-                        {Math.round(prefs.bpm).toString().padStart(3, "0")}
-                      </button>
-                    )}
-                    <span className="font-pixel text-[10px] uppercase tracking-widest text-cream-400">
-                      bpm
-                    </span>
-                  </div>
-                  <div className="flex gap-1">
-                    <button
-                      type="button"
-                      className="btn"
-                      disabled={isBusy}
-                      onClick={() => commitBpm(prefs.bpm - 1)}
-                      aria-label="decrease bpm"
-                    >
-                      −
-                    </button>
-                    <button
-                      type="button"
-                      className="btn"
-                      disabled={isBusy}
-                      onClick={() => commitBpm(prefs.bpm + 1)}
-                      aria-label="increase bpm"
-                    >
-                      +
-                    </button>
-                    <button
-                      type="button"
-                      className="btn"
-                      disabled={isBusy}
-                      onClick={tapTempo}
-                      title="tap to set tempo"
-                    >
-                      tap
-                    </button>
-                  </div>
-                </div>
-              </div>
+          <div ref={recordBtnRef} className="flex flex-col items-center gap-2">
+            <RecordOrb
+              state={state}
+              onClick={toggleRecord}
+              barProgress={barProgress}
+              disabled={state === "stopping"}
+            />
+            <div className="font-pixel text-[11px] uppercase tracking-[0.3em] text-cream-300 mt-1">
+              {state === "recording"
+                ? "■ press to stop"
+                : state === "arming"
+                  ? "× cancel count-in"
+                  : state === "stopping"
+                    ? "writing wav…"
+                    : "● press to record"}
+            </div>
+          </div>
 
-              <div className="h-px bg-cream-400/10" />
-
-              <div className="flex justify-center py-1">
-                <BeatStrip
-                  beatsPerBar={BEATS_PER_BAR}
-                  activeBeat={activeBeat}
-                />
-              </div>
-
-              <div className="h-px bg-cream-400/10" />
-
-              <div className="flex flex-col gap-3">
-                <div className="font-pixel text-[10px] uppercase tracking-widest text-cream-400">
-                  record
-                </div>
-                <div className="flex items-center justify-between gap-4 flex-wrap">
-                  <button
-                    ref={recordBtnRef}
-                    type="button"
-                    onClick={toggleRecord}
-                    disabled={state === "stopping"}
-                    className={`btn ${state === "recording" ? "danger" : ""}`}
-                    title="space"
-                  >
-                    {state === "recording"
-                      ? "■ stop"
-                      : state === "arming"
-                        ? "× cancel"
-                        : "● rec"}
-                  </button>
-                  <div className="flex items-baseline gap-2">
-                    <span
-                      className={`readout text-2xl font-pixel ${state === "recording" ? "rec" : "dim"}`}
-                    >
-                      {formatDuration(elapsed)}
-                    </span>
-                    <span className="font-pixel text-[10px] uppercase tracking-widest text-cream-400">
-                      {state === "recording"
-                        ? "rolling"
-                        : state === "arming"
-                          ? "count-in"
-                          : state === "stopping"
-                            ? "writing wav"
-                            : "ready"}
-                    </span>
-                  </div>
-                </div>
-              </div>
+          {/* ─── MODULE RACK ─── */}
+          <div className="w-full max-w-5xl grid grid-cols-1 md:grid-cols-3 gap-4 mt-2">
+            {/* INPUT */}
+            <section className="module">
+              <Screws />
+              <span className="module-tab">input</span>
+              <DevicePanel
+                devices={devices}
+                selected={prefs.device}
+                onSelect={(name) => updatePrefs({ device: name })}
+                onRefresh={refreshDevices}
+                disabled={state === "recording" || state === "stopping"}
+              />
             </section>
 
-            {/* RIGHT: click voice + count-in + volume + device */}
-            <section className="panel p-5 flex flex-col gap-5">
+            {/* CLICK */}
+            <section className="module flex flex-col gap-3">
+              <Screws />
+              <span className="module-tab">click</span>
+
               <ClickPicker
                 value={prefs.voice}
                 onChange={(voice) => updatePrefs({ voice })}
@@ -603,34 +502,29 @@ export function App() {
                 disabled={state === "recording" || state === "stopping"}
               />
 
-              <div className="flex flex-col gap-2">
-                <div className="font-pixel text-[10px] uppercase tracking-widest text-cream-400">
-                  options
-                </div>
-                <div className="flex gap-1 flex-wrap">
-                  <button
-                    type="button"
-                    onClick={() => updatePrefs({ metroOn: !prefs.metroOn })}
-                    disabled={isBusy}
-                    className={`btn ${prefs.metroOn ? "active" : ""}`}
-                  >
-                    metro {prefs.metroOn ? "on" : "off"}
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => updatePrefs({ countIn: !prefs.countIn })}
-                    disabled={isBusy}
-                    className={`btn ${prefs.countIn ? "active" : ""}`}
-                  >
-                    count-in {prefs.countIn ? "on" : "off"}
-                  </button>
-                </div>
+              <div className="module-divider" />
+
+              <div className="flex flex-wrap gap-2">
+                <Switch
+                  on={prefs.metroOn}
+                  disabled={isBusy}
+                  label={`metro ${prefs.metroOn ? "on" : "off"}`}
+                  onToggle={() => updatePrefs({ metroOn: !prefs.metroOn })}
+                />
+                <Switch
+                  on={prefs.countIn}
+                  disabled={isBusy}
+                  label={`count-in ${prefs.countIn ? "on" : "off"}`}
+                  onToggle={() => updatePrefs({ countIn: !prefs.countIn })}
+                />
               </div>
 
-              <div className="flex flex-col gap-2">
-                <div className="font-pixel text-[10px] uppercase tracking-widest text-cream-400 flex justify-between">
-                  <span>click volume</span>
-                  <span className="font-mono">
+              <div className="module-divider" />
+
+              <div className="flex flex-col gap-1.5">
+                <div className="flex justify-between font-pixel text-[11px] uppercase tracking-[0.28em] text-cream-300">
+                  <span>volume</span>
+                  <span className="font-mono tracking-normal text-cream-400">
                     {Math.round(prefs.metroVolume * 100)}
                   </span>
                 </div>
@@ -644,46 +538,38 @@ export function App() {
                       metroVolume: clamp(Number(e.target.value) / 100, 0, 1),
                     })
                   }
-                  className="accent-crema-500"
                 />
               </div>
+            </section>
 
-              <DevicePanel
-                devices={devices}
-                selected={prefs.device}
-                onSelect={(name) => updatePrefs({ device: name })}
-                onRefresh={refreshDevices}
-                disabled={state === "recording" || state === "stopping"}
+            {/* LEVEL */}
+            <section className="module flex flex-col gap-3">
+              <Screws />
+              <span className="module-tab">level</span>
+              <VuMeter
+                peakDb={peakDb}
+                rmsDb={rmsDb}
+                peakHoldDb={peakHoldDb}
+                clipped={clipped}
               />
-
-              <div className="flex flex-col gap-2">
-                <div className="font-pixel text-[10px] uppercase tracking-widest text-cream-400">
-                  level
-                </div>
-                <VuMeter
-                  peakDb={peakDb}
-                  rmsDb={rmsDb}
-                  peakHoldDb={peakHoldDb}
-                  clipped={clipped}
-                />
-              </div>
             </section>
           </div>
         </main>
 
-        {/* BOTTOM: takes shelf */}
-        <footer className="px-6 pb-5 pt-1 grid gap-3">
-          <div className="flex items-end justify-between gap-3">
+        {/* ─── TAPE RACK FOOTER ─── */}
+        <footer className="px-6 pt-6 pb-5 grid gap-3">
+          <div className="max-w-5xl mx-auto w-full flex items-end justify-between gap-4">
             <div className="flex flex-col gap-2 min-w-0 flex-1">
-              <div className="font-pixel text-[10px] uppercase tracking-widest text-cream-400">
-                recent takes
-              </div>
+              <span className="font-pixel text-[11px] uppercase tracking-[0.32em] text-cream-300">
+                tape rack
+              </span>
               <TakesShelf takes={takes} />
             </div>
+
             <div className="flex flex-col items-end gap-2 shrink-0">
-              <div className="font-pixel text-[10px] uppercase tracking-widest text-cream-400">
+              <span className="font-pixel text-[11px] uppercase tracking-[0.32em] text-cream-300">
                 save to
-              </div>
+              </span>
               <div className="flex gap-1">
                 <button
                   type="button"
@@ -709,11 +595,213 @@ export function App() {
               </div>
             </div>
           </div>
+
+          <div className="max-w-5xl mx-auto w-full flex items-center justify-center gap-3 pt-1 font-mono text-[11px] text-cream-400/70">
+            <span className="kbd">space</span>
+            <span>record · stop</span>
+            <span className="opacity-40">·</span>
+            <span className="kbd">click bpm</span>
+            <span>edit tempo</span>
+          </div>
         </footer>
       </div>
 
       <Splash splash={splash} />
     </div>
+  );
+}
+
+/* ─────────── tape window subcomponent ─────────── */
+
+type TapeWindowProps = {
+  elapsed: number;
+  state: RecState;
+  bpm: number;
+  activeBeat: number | null;
+  reelsSpin: boolean;
+  editingBpm: boolean;
+  bpmInput: string;
+  setEditingBpm: (v: boolean) => void;
+  setBpmInput: (v: string) => void;
+  commitBpm: (n: number) => void;
+  tapTempo: () => void;
+  isBusy: boolean;
+};
+
+function TapeWindow({
+  elapsed,
+  state,
+  bpm,
+  activeBeat,
+  reelsSpin,
+  editingBpm,
+  bpmInput,
+  setEditingBpm,
+  setBpmInput,
+  commitBpm,
+  tapTempo,
+  isBusy,
+}: TapeWindowProps) {
+  const tcRec = state === "recording";
+  const tcDim = state === "idle";
+
+  return (
+    <div className="tape-window relative">
+      {/* top row: reel · timecode · reel */}
+      <div className="relative z-10 flex items-center justify-between gap-4">
+        <Reel spin={reelsSpin} fast={state === "recording"} />
+
+        <div className="flex flex-col items-center gap-1.5">
+          <span className="tape-label">timecode</span>
+          <div className="lcd-stack">
+            <span className="lcd-ghost lcd huge">88:88</span>
+            <span
+              className={`lcd huge ${tcRec ? "rec" : tcDim ? "dim" : ""}`}
+            >
+              {formatDuration(elapsed)}
+            </span>
+          </div>
+        </div>
+
+        <Reel spin={reelsSpin} fast={state === "recording"} />
+      </div>
+
+      {/* mid row: beat LEDs */}
+      <div className="relative z-10 flex items-center justify-center gap-2 mt-4">
+        <span className="tape-label mr-2">bar</span>
+        <BeatStrip beatsPerBar={BEATS_PER_BAR} activeBeat={activeBeat} />
+      </div>
+
+      <div className="relative z-10 module-divider my-4 opacity-60" />
+
+      {/* bottom row: tempo controls */}
+      <div className="relative z-10 flex items-center justify-between gap-4 flex-wrap">
+        <div className="flex items-baseline gap-2">
+          <span className="tape-label">tempo</span>
+          {editingBpm ? (
+            <input
+              autoFocus
+              type="number"
+              min={40}
+              max={240}
+              value={bpmInput}
+              onChange={(e) => setBpmInput(e.target.value)}
+              onBlur={() => {
+                const n = parseFloat(bpmInput);
+                if (!isNaN(n)) commitBpm(n);
+                setEditingBpm(false);
+              }}
+              onKeyDown={(e) => {
+                if (e.key === "Enter") e.currentTarget.blur();
+                if (e.key === "Escape") setEditingBpm(false);
+              }}
+              className="w-28 text-center bg-roast-950 border border-roast-700 lcd big py-0.5 rounded"
+            />
+          ) : (
+            <button
+              type="button"
+              onClick={() => {
+                setBpmInput(String(Math.round(bpm)));
+                setEditingBpm(true);
+              }}
+              disabled={isBusy}
+              className="lcd big px-2 py-0.5 rounded hover:bg-black/20 transition-colors"
+              title="click to type a BPM"
+            >
+              {Math.round(bpm).toString().padStart(3, "0")}
+            </button>
+          )}
+          <span className="tape-label">bpm</span>
+        </div>
+
+        <div className="flex gap-1">
+          <button
+            type="button"
+            className="btn sm"
+            disabled={isBusy}
+            onClick={() => commitBpm(bpm - 1)}
+            aria-label="decrease bpm"
+          >
+            −
+          </button>
+          <button
+            type="button"
+            className="btn sm"
+            disabled={isBusy}
+            onClick={() => commitBpm(bpm + 1)}
+            aria-label="increase bpm"
+          >
+            +
+          </button>
+          <button
+            type="button"
+            className="btn sm"
+            disabled={isBusy}
+            onClick={tapTempo}
+            title="tap to set tempo"
+          >
+            tap
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+/* ─────────── reel ─────────── */
+
+function Reel({ spin, fast }: { spin: boolean; fast?: boolean }) {
+  return (
+    <div className={`reel ${spin ? "spin" : ""} ${spin && fast ? "fast" : ""}`}>
+      <div className="reel-spokes">
+        <span />
+        <span />
+        <span />
+      </div>
+      <div className="reel-hub" />
+    </div>
+  );
+}
+
+/* ─────────── physical switch ─────────── */
+
+function Switch({
+  on,
+  disabled,
+  label,
+  onToggle,
+}: {
+  on: boolean;
+  disabled?: boolean;
+  label: string;
+  onToggle: () => void;
+}) {
+  return (
+    <button
+      type="button"
+      className={`switch ${on ? "on" : ""}`}
+      onClick={onToggle}
+      disabled={disabled}
+      aria-pressed={on}
+    >
+      <span className="switch-track">
+        <span className="switch-thumb" />
+      </span>
+      <span>{label}</span>
+    </button>
+  );
+}
+
+/* ─────────── module corner screws ─────────── */
+
+function Screws() {
+  return (
+    <>
+      <span className="screw tl" />
+      <span className="screw tr" />
+      <span className="screw bl" />
+      <span className="screw br" />
+    </>
   );
 }
 
