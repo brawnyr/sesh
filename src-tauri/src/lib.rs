@@ -5,7 +5,7 @@ use parking_lot::Mutex;
 use serde::{Deserialize, Serialize};
 use std::fs;
 use std::path::PathBuf;
-use tauri::{Manager, State};
+use tauri::{Manager, State, WindowEvent};
 
 pub struct AppState {
     audio: Mutex<Option<AudioController>>,
@@ -178,6 +178,11 @@ pub fn run() {
             *state.audio.lock() = Some(controller);
             let _ = app.get_webview_window("main");
             Ok(())
+        })
+        .on_window_event(|window, event| {
+            if let WindowEvent::CloseRequested { .. } = event {
+                window.app_handle().exit(0);
+            }
         })
         .run(tauri::generate_context!())
         .expect("error while running sesh");
