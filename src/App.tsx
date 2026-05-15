@@ -406,7 +406,7 @@ export function App() {
           <div className="title">
             <span className={`title-dot ${state}`} aria-hidden />
             <span className="title-mark">sesh</span>
-            <span className="title-sub">— session recorder</span>
+            <span className="title-sub">session recorder</span>
           </div>
           <span
             className={`stamp-chip ${
@@ -425,13 +425,13 @@ export function App() {
         <main className="px-8 flex-1 flex flex-col items-center gap-8 max-w-6xl w-full mx-auto">
           {/* timecode card */}
           <section className="paper timecode-card pinned-c w-full max-w-2xl">
-            <span className="tape-strip" />
+            <span className="tape-strip">register</span>
 
             <div className="flex items-end justify-between gap-4">
               <div className="flex flex-col gap-2">
                 <span className="stamp">timecode</span>
                 <div className="timecode-stack">
-                  <span className={`painted huge ${tcRec ? "rec" : tcDim ? "dim" : ""}`}>
+                  <span className={`numerals huge ${tcRec ? "rec" : tcDim ? "dim" : ""}`}>
                     {formatDuration(elapsed)}
                   </span>
                 </div>
@@ -475,7 +475,7 @@ export function App() {
                       setEditingBpm(true);
                     }}
                     disabled={isBusy}
-                    className="painted big"
+                    className="numerals big"
                     title="click to type a BPM"
                     style={{ background: "transparent", border: "none", cursor: "pointer", padding: 0 }}
                   >
@@ -598,7 +598,7 @@ export function App() {
               <div className="flex flex-col gap-1">
                 <div className="flex justify-between items-baseline">
                   <span className="scribble-label">volume</span>
-                  <span className="font-mono text-[11px] text-[var(--ink-muted)]">
+                  <span className="font-mono text-[11px] text-[var(--bone-soft)]">
                     {Math.round(prefs.metroVolume * 100)}
                   </span>
                 </div>
@@ -667,7 +667,7 @@ export function App() {
             </div>
           </div>
 
-          <div className="flex items-center justify-center gap-3 pt-2 font-mono text-[11px] text-[var(--ink-muted)]">
+          <div className="flex items-center justify-center gap-3 pt-2 font-mono text-[11px] text-[var(--bone-soft)]">
             <span className="kbd">space</span>
             <span>record · stop</span>
           </div>
