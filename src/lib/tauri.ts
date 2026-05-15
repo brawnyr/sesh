@@ -1,9 +1,7 @@
 import { invoke } from "@tauri-apps/api/core";
 import { listen, type UnlistenFn } from "@tauri-apps/api/event";
 
-// Tauri injects globals into window. When running Vite-only (browser dev),
-// those globals are absent and invoke() throws. Detect once and stub out
-// commands so the UI loads cleanly without recording features.
+// Vite-only browser dev has no Tauri globals — stub the commands so the UI still loads.
 const hasTauri =
   typeof window !== "undefined" && "__TAURI_INTERNALS__" in window;
 

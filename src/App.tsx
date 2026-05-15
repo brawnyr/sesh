@@ -61,9 +61,7 @@ function loadPrefs(): Prefs {
 function savePrefs(p: Prefs) {
   try {
     localStorage.setItem(PREFS_KEY, JSON.stringify(p));
-  } catch {
-    // ignore
-  }
+  } catch {}
 }
 
 export function App() {
@@ -401,7 +399,6 @@ export function App() {
       )}
 
       <div className="relative z-10 h-full flex flex-col overflow-y-auto scrollbar-thin">
-        {/* ─── HEADER ─── */}
         <header className="px-8 pt-7 pb-4 flex items-center justify-between gap-4 max-w-6xl w-full mx-auto">
           <div className="title">
             <span className={`title-dot ${state}`} aria-hidden />
@@ -421,9 +418,7 @@ export function App() {
           </span>
         </header>
 
-        {/* ─── HERO ─── */}
         <main className="px-8 flex-1 flex flex-col items-center gap-8 max-w-6xl w-full mx-auto">
-          {/* timecode card */}
           <section className="paper timecode-card pinned-c w-full max-w-2xl">
             <span className="tape-strip">register</span>
 
@@ -517,7 +512,6 @@ export function App() {
             </div>
           </section>
 
-          {/* record blob */}
           <div ref={recordBtnRef} className="flex flex-col items-center gap-2">
             <RecordOrb
               state={state}
@@ -535,7 +529,6 @@ export function App() {
             </div>
           </div>
 
-          {/* studies row */}
           <div className="w-full grid grid-cols-1 md:grid-cols-3 gap-6 mt-2">
             <section className="paper pinned-l">
               <span className="pin blue tr" />
@@ -631,7 +624,6 @@ export function App() {
           </div>
         </main>
 
-        {/* ─── FOOTER ─── */}
         <footer className="px-8 pt-8 pb-6 grid gap-3 max-w-6xl w-full mx-auto">
           <div className="flex items-end justify-between gap-4 flex-wrap">
             <div className="flex flex-col gap-2 min-w-0 flex-1">

@@ -1,5 +1,4 @@
-// Generate all Tauri-bundle icon files from the pixel-art source PNGs.
-// Uses nearest-neighbor scaling so the pixel art stays crisp at every size.
+// Build the Tauri-bundle icons from the pixel-art sources, scaled nearest-neighbor.
 import { mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { Buffer } from "node:buffer";
 import { dirname, join } from "node:path";
@@ -16,7 +15,6 @@ mkdirSync(ICONS_DIR, { recursive: true });
 const src32 = readFileSync(SRC_32);
 const src16 = readFileSync(SRC_16);
 
-// nearest-neighbor scale, square output
 async function nearest(buf, size) {
   return await sharp(buf)
     .resize(size, size, {
@@ -29,7 +27,6 @@ async function nearest(buf, size) {
 }
 
 function makeIco(entries) {
-  // entries: Array<{ size: number, png: Buffer }>
   const count = entries.length;
   const header = Buffer.alloc(6);
   header.writeUInt16LE(0, 0);

@@ -121,14 +121,20 @@ fn list_takes(state: State<AppState>) -> Result<Vec<TakeMeta>, String> {
 }
 
 #[tauri::command]
-fn reveal_in_folder(path: String) -> Result<(), String> {
+fn reveal_in_folder(state: State<AppState>, path: String) -> Result<(), String> {
     let p = PathBuf::from(&path);
     let target = if p.is_file() {
         p.parent().map(|x| x.to_path_buf()).unwrap_or(p)
     } else {
         p
     };
-    open_path(&target).map_err(|e| e.to_string())
+    let takes_dir = state.takes_dir.lock().clone();
+    let allowed = fs::canonicalize(&takes_dir).map_err(|e| e.to_string())?;
+    let resolved = fs::canonicalize(&target).map_err(|e| e.to_string())?;
+    if !resolved.starts_with(&allowed) {
+        return Err("path outside takes_dir".to_string());
+    }
+    open_path(&resolved).map_err(|e| e.to_string())
 }
 
 fn open_path(path: &std::path::Path) -> std::io::Result<()> {

@@ -33,10 +33,8 @@ function formatDb(db: number) {
 
 export function VuMeter({ peakDb, rmsDb, peakHoldDb, clipped }: Props) {
   const peakFrac = dbToFraction(peakDb);
-  const rmsFrac = dbToFraction(rmsDb);
   const holdFrac = dbToFraction(peakHoldDb);
   const peakLit = Math.round(peakFrac * CELLS);
-  void rmsFrac;
 
   const peakColor =
     peakDb >= RED_DB

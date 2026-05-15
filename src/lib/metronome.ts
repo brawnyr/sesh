@@ -212,10 +212,6 @@ export class Metronome {
       osc.start(time);
       osc.stop(time + 0.2);
     };
-    const bp = ctx.createBiquadFilter();
-    bp.type = "highpass";
-    bp.frequency.value = 500;
-    bp.connect(ctx.destination);
     make(f1, v * 0.5);
     make(f2, v * 0.4);
   }

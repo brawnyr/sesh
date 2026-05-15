@@ -204,7 +204,6 @@ impl ActiveWriter {
 
 type WriterSlot = Arc<Mutex<Option<ActiveWriter>>>;
 
-// Commands sent into the audio worker thread.
 pub enum AudioCmd {
     SetDevice {
         name: Option<String>,
@@ -383,8 +382,7 @@ impl WorkerState {
             let _ = handle.join();
         }
         self.current_format = None;
-        // Note: we do NOT clear current_device_name — we want to remember it
-        // even if we later try to restart on the same device.
+        // keep current_device_name so a later restart can target the same device
     }
 
     fn start_recording(&mut self, takes_dir: PathBuf) -> Result<TakeInfo, String> {
@@ -483,12 +481,13 @@ fn consumer_loop(
             window_clipped = true;
         }
 
-        // write if recording
         {
             let mut guard = writer_slot.lock();
             if let Some(active) = guard.as_mut() {
                 if let Err(e) = sample.write_to(&mut active.writer) {
-                    eprintln!("write error: {}", e);
+                    let msg = e.to_string();
+                    eprintln!("write error: {}", msg);
+                    let _ = app.emit("sesh:write_error", msg);
                 } else {
                     active.frames_written += (count as u64) / (channels as u64).max(1);
                 }
