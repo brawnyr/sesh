@@ -39,19 +39,19 @@ export function DevicePanel({
   const label = current ? current.name : selected ?? "no input selected";
 
   return (
-    <div className="flex flex-col gap-2 relative" ref={containerRef}>
-      <div className="flex gap-1">
+    <div className="flex flex-col gap-2 relative min-w-0" ref={containerRef}>
+      <div className="flex gap-1 min-w-0">
         <button
           type="button"
-          className="btn flex-1 justify-between"
+          className="btn flex-1 min-w-0 justify-between"
           onClick={() => setOpen((o) => !o)}
           disabled={disabled}
           title={current?.name ?? ""}
         >
-          <span className="truncate font-mono normal-case tracking-normal">
+          <span className="truncate font-mono normal-case tracking-normal min-w-0 flex-1 text-left">
             {label}
           </span>
-          <span className="font-mono text-[10px] normal-case tracking-normal text-[var(--ink-muted)]">
+          <span className="font-mono text-[10px] normal-case tracking-normal shrink-0 text-[var(--bone-soft)]">
             {current
               ? `${current.channels}ch · ${(current.sample_rate / 1000).toFixed(1)}k`
               : "—"}
@@ -75,7 +75,7 @@ export function DevicePanel({
       {open && (
         <div className="popover scrollbar-thin" role="listbox">
           {devices.length === 0 && (
-            <div className="px-3 py-3 font-mono text-sm text-[var(--ink-muted)]">
+            <div className="px-3 py-3 font-mono text-sm text-[var(--bone-soft)]">
               no inputs detected — check that your scarlett is plugged in and
               not claimed by another app.
             </div>
@@ -98,7 +98,7 @@ export function DevicePanel({
                   {d.is_default ? "★ " : ""}
                   {d.name}
                 </span>
-                <span className="shrink-0 text-[var(--ink-muted)]">
+                <span className="shrink-0 text-[var(--bone-soft)]">
                   {d.channels || "?"}ch ·{" "}
                   {d.sample_rate ? `${(d.sample_rate / 1000).toFixed(1)}k` : "?"}
                 </span>

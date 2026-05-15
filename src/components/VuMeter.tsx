@@ -84,7 +84,7 @@ export function VuMeter({ peakDb, rmsDb, peakHoldDb, clipped }: Props) {
         />
       </div>
 
-      <div className="relative h-3 font-mono text-[9px] text-[var(--ink-muted)]">
+      <div className="relative h-3 font-mono text-[9px] text-[var(--bone-soft)]">
         {LABELS.map((db) => (
           <span
             key={db}
@@ -112,14 +112,14 @@ export function VuMeter({ peakDb, rmsDb, peakHoldDb, clipped }: Props) {
           <span className="stamp" style={{ fontSize: "0.6rem" }}>
             rms
           </span>
-          <span className="text-[var(--ink-soft)]">{formatDb(rmsDb)}</span>
+          <span className="text-[var(--bone)]">{formatDb(rmsDb)}</span>
         </div>
         <div
           className={`stamp px-1.5 py-0.5 rounded transition-opacity ${
             clipped ? "animate-blink opacity-100" : "opacity-40"
           }`}
           style={{
-            color: clipped ? "var(--crimson)" : "var(--ink-faint)",
+            color: clipped ? "var(--crimson)" : "var(--bone-faint)",
             background: clipped ? "rgba(200, 53, 30, 0.12)" : "transparent",
             fontSize: "0.6rem",
           }}
