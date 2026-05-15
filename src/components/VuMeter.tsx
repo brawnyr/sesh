@@ -40,10 +40,10 @@ export function VuMeter({ peakDb, rmsDb, peakHoldDb, clipped }: Props) {
 
   const peakColor =
     peakDb >= RED_DB
-      ? "text-rec-400"
+      ? "var(--crimson)"
       : peakDb >= AMBER_DB
-        ? "text-crema-400"
-        : "text-vu-green";
+        ? "var(--ochre-deep)"
+        : "var(--sap)";
 
   return (
     <div className="flex flex-col gap-1.5">
@@ -57,20 +57,34 @@ export function VuMeter({ peakDb, rmsDb, peakHoldDb, clipped }: Props) {
         </div>
         {peakHoldDb > DB_MIN + 0.5 && (
           <div
-            className="absolute top-[3px] bottom-[3px] w-[2px] bg-cream-50 pointer-events-none"
+            className="absolute top-[3px] bottom-[3px] w-[2px] pointer-events-none"
             style={{
               left: `calc(${holdFrac * 100}% - 1px)`,
-              boxShadow: "0 0 6px rgba(244,232,208,0.85)",
+              background: "var(--ink)",
               transition: "left 80ms linear",
             }}
             aria-hidden
           />
         )}
-        <div className="absolute inset-y-0 pointer-events-none" style={{ left: `${dbToFraction(AMBER_DB) * 100}%`, width: 1, background: "rgba(244,232,208,0.18)" }} />
-        <div className="absolute inset-y-0 pointer-events-none" style={{ left: `${dbToFraction(RED_DB) * 100}%`, width: 1, background: "rgba(255,77,46,0.35)" }} />
+        <div
+          className="absolute inset-y-0 pointer-events-none"
+          style={{
+            left: `${dbToFraction(AMBER_DB) * 100}%`,
+            width: 1,
+            background: "rgba(40, 30, 15, 0.25)",
+          }}
+        />
+        <div
+          className="absolute inset-y-0 pointer-events-none"
+          style={{
+            left: `${dbToFraction(RED_DB) * 100}%`,
+            width: 1,
+            background: "rgba(200, 53, 30, 0.5)",
+          }}
+        />
       </div>
 
-      <div className="relative h-3 font-mono text-[9px] text-cream-400">
+      <div className="relative h-3 font-mono text-[9px] text-[var(--ink-muted)]">
         {LABELS.map((db) => (
           <span
             key={db}
@@ -84,25 +98,31 @@ export function VuMeter({ peakDb, rmsDb, peakHoldDb, clipped }: Props) {
 
       <div className="flex items-center justify-between font-mono text-xs">
         <div className="flex items-baseline gap-2">
-          <span className={`readout text-base ${peakColor}`} style={{ textShadow: "none" }}>
+          <span
+            className="font-mono text-base"
+            style={{ color: peakColor, fontWeight: 600 }}
+          >
             {formatDb(peakDb)}
           </span>
-          <span className="font-pixel text-[10px] uppercase tracking-widest text-cream-400">
+          <span className="stamp" style={{ fontSize: "0.6rem" }}>
             peak db
           </span>
         </div>
         <div className="flex items-baseline gap-2">
-          <span className="font-pixel text-[10px] uppercase tracking-widest text-cream-400">
+          <span className="stamp" style={{ fontSize: "0.6rem" }}>
             rms
           </span>
-          <span className="text-cream-300">{formatDb(rmsDb)}</span>
+          <span className="text-[var(--ink-soft)]">{formatDb(rmsDb)}</span>
         </div>
         <div
-          className={`font-pixel text-[10px] uppercase tracking-widest px-1.5 py-0.5 rounded transition-opacity ${
-            clipped
-              ? "bg-rec-600/30 text-rec-400 animate-blink opacity-100"
-              : "text-cream-400/40 opacity-50"
+          className={`stamp px-1.5 py-0.5 rounded transition-opacity ${
+            clipped ? "animate-blink opacity-100" : "opacity-40"
           }`}
+          style={{
+            color: clipped ? "var(--crimson)" : "var(--ink-faint)",
+            background: clipped ? "rgba(200, 53, 30, 0.12)" : "transparent",
+            fontSize: "0.6rem",
+          }}
         >
           ● clip
         </div>

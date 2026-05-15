@@ -48,10 +48,10 @@ export function DevicePanel({
           disabled={disabled}
           title={current?.name ?? ""}
         >
-          <span className="truncate font-mono normal-case tracking-normal text-cream-100">
+          <span className="truncate font-mono normal-case tracking-normal">
             {label}
           </span>
-          <span className="font-pixel text-xs text-cream-400">
+          <span className="font-mono text-[10px] normal-case tracking-normal text-[var(--ink-muted)]">
             {current
               ? `${current.channels}ch · ${(current.sample_rate / 1000).toFixed(1)}k`
               : "—"}
@@ -73,12 +73,9 @@ export function DevicePanel({
       </div>
 
       {open && (
-        <div
-          className="absolute left-0 top-full mt-1 w-full z-30 panel max-h-72 overflow-auto scrollbar-thin"
-          role="listbox"
-        >
+        <div className="popover scrollbar-thin" role="listbox">
           {devices.length === 0 && (
-            <div className="px-3 py-3 font-mono text-sm text-cream-400">
+            <div className="px-3 py-3 font-mono text-sm text-[var(--ink-muted)]">
               no inputs detected — check that your scarlett is plugged in and
               not claimed by another app.
             </div>
@@ -95,17 +92,13 @@ export function DevicePanel({
                   onSelect(d.name);
                   setOpen(false);
                 }}
-                className={`w-full text-left px-3 py-2 font-mono text-sm flex justify-between gap-3 transition-colors ${
-                  isSelected
-                    ? "bg-roast-700 text-cream-50"
-                    : "hover:bg-roast-800 text-cream-200"
-                }`}
+                className={`popover-item ${isSelected ? "selected" : ""}`}
               >
                 <span className="truncate">
                   {d.is_default ? "★ " : ""}
                   {d.name}
                 </span>
-                <span className="text-cream-400 shrink-0">
+                <span className="shrink-0 text-[var(--ink-muted)]">
                   {d.channels || "?"}ch ·{" "}
                   {d.sample_rate ? `${(d.sample_rate / 1000).toFixed(1)}k` : "?"}
                 </span>
