@@ -247,7 +247,9 @@ export function App() {
       const list = await seshApi.listInputDevices();
       setDevices(list);
       if (!prefs.device || !list.find((d) => d.name === prefs.device)) {
-        const def = list.find((d) => d.is_default) ?? list[0];
+        const scarlett = list.find((d) => /scarlett\s*solo/i.test(d.name));
+        const def =
+          scarlett ?? list.find((d) => d.is_default) ?? list[0];
         if (def) updatePrefs({ device: def.name });
       }
     } catch (e) {

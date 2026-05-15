@@ -584,9 +584,6 @@ pub fn list_input_devices() -> Result<Vec<InputDevice>> {
 }
 
 pub fn default_takes_dir() -> PathBuf {
-    let base = dirs::audio_dir()
-        .or_else(dirs::document_dir)
-        .or_else(dirs::home_dir)
-        .unwrap_or_else(|| PathBuf::from("."));
-    base.join("sesh")
+    let base = dirs::home_dir().unwrap_or_else(|| PathBuf::from("."));
+    base.join("sample library").join("sesh")
 }
