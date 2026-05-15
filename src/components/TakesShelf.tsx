@@ -8,29 +8,32 @@ type Props = {
 export function TakesShelf({ takes }: Props) {
   if (takes.length === 0) {
     return (
-      <div className="font-pixel text-xs text-cream-400 tracking-widest uppercase">
+      <div className="font-pixel text-xs text-cream-400 tracking-widest uppercase py-2">
         no takes yet · hit <span className="kbd">space</span>
       </div>
     );
   }
   return (
-    <div className="flex gap-2 overflow-x-auto scrollbar-thin pb-1">
+    <div className="flex gap-2 overflow-x-auto scrollbar-thin pb-1.5 pt-0.5">
       {takes.slice(0, 16).map((t, i) => (
         <button
           key={t.path}
           type="button"
           onClick={() => seshApi.revealInFolder(t.path)}
-          className="panel px-3 py-2 flex flex-col items-start gap-0.5 min-w-[10.5rem] transition-transform hover:-translate-y-0.5"
+          className="cassette text-left"
           title={t.path}
         >
-          <span className="font-pixel text-[10px] uppercase tracking-widest text-cream-400">
-            take {takes.length - i}
-          </span>
-          <span className="font-mono text-xs text-cream-100 truncate w-full text-left">
+          <div className="cassette-reels">
+            <div className="cassette-reel" />
+            <div className="cassette-tape" />
+            <div className="cassette-reel" />
+          </div>
+          <div className="flex items-baseline justify-between gap-2">
+            <span className="cassette-label">take {takes.length - i}</span>
+            <span className="cassette-meta">{formatBytes(t.bytes)}</span>
+          </div>
+          <span className="cassette-title">
             {t.name.replace(/^sesh-/, "").replace(/\.wav$/, "")}
-          </span>
-          <span className="font-mono text-[10px] text-cream-400">
-            {formatBytes(t.bytes)}
           </span>
         </button>
       ))}
