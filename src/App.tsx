@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { open as openDialog } from "@tauri-apps/plugin-dialog";
 import { ShaderCanvas } from "./components/ShaderCanvas";
-import { driftShader } from "./shaders/drift";
+import { brewShader } from "./shaders/brew";
 import {
   CLICK_VOICES,
   Metronome,
@@ -15,10 +15,8 @@ import {
 } from "./lib/tauri";
 import { clamp, formatDuration } from "./lib/util";
 import type { RecState } from "./lib/state";
-import { TempoDial } from "./components/TempoDial";
 import { ClickPicker } from "./components/ClickPicker";
 import { DevicePanel } from "./components/DevicePanel";
-import { RecordOrb } from "./components/RecordOrb";
 import { BeatStrip } from "./components/BeatStrip";
 import { VuMeter } from "./components/VuMeter";
 import { Splash, type SplashEvent } from "./components/Splash";
@@ -85,15 +83,18 @@ export function App() {
   const [peakHoldDb, setPeakHoldDb] = useState(-90);
   const [clipped, setClipped] = useState(false);
   const [elapsed, setElapsed] = useState(0);
-  const [barProgress, setBarProgress] = useState(0);
   const [error, setError] = useState<string | null>(null);
   const [splash, setSplash] = useState<SplashEvent | null>(null);
 
   const recordStartRef = useRef<number | null>(null);
   const barStartRef = useRef<number | null>(null);
   const armTimerRef = useRef<number | null>(null);
-  const orbRectRef = useRef<DOMRect | null>(null);
-  const orbWrapRef = useRef<HTMLDivElement | null>(null);
+  const recordRectRef = useRef<DOMRect | null>(null);
+  const recordBtnRef = useRef<HTMLButtonElement | null>(null);
+  const tapTimesRef = useRef<number[]>([]);
+
+  const [editingBpm, setEditingBpm] = useState(false);
+  const [bpmInput, setBpmInput] = useState("");
 
   // Persist prefs whenever they change
   useEffect(() => {
@@ -199,32 +200,22 @@ export function App() {
     };
   }, []);
 
-  // Elapsed timer + bar progress while running
+  // Elapsed timer while running
   useEffect(() => {
     if (state === "idle") {
       setElapsed(0);
-      setBarProgress(0);
       return;
     }
     let raf = 0;
-    const barDurMs = (60_000 / prefs.bpm) * BEATS_PER_BAR;
     const tick = () => {
       raf = requestAnimationFrame(tick);
-      const now = performance.now();
       if (state === "recording" && recordStartRef.current !== null) {
-        setElapsed((now - recordStartRef.current) / 1000);
-      }
-      const bs = barStartRef.current;
-      if (bs !== null) {
-        const t = ((now - bs) % barDurMs) / barDurMs;
-        setBarProgress(clamp(t, 0, 1));
-      } else {
-        setBarProgress(0);
+        setElapsed((performance.now() - recordStartRef.current) / 1000);
       }
     };
     raf = requestAnimationFrame(tick);
     return () => cancelAnimationFrame(raf);
-  }, [state, prefs.bpm]);
+  }, [state]);
 
   // Initial load
   useEffect(() => {
@@ -287,11 +278,30 @@ export function App() {
   }, [metronome]);
 
   const triggerSplash = useCallback(() => {
-    const rect = orbRectRef.current ?? orbWrapRef.current?.getBoundingClientRect();
+    const rect = recordRectRef.current ?? recordBtnRef.current?.getBoundingClientRect();
     const x = rect ? rect.left + rect.width / 2 : window.innerWidth / 2;
     const y = rect ? rect.top + rect.height / 2 : window.innerHeight / 2;
     setSplash({ id: Date.now() + Math.random(), x, y });
   }, []);
+
+  const commitBpm = useCallback(
+    (next: number) => updatePrefs({ bpm: clamp(Math.round(next), 40, 240) }),
+    [updatePrefs],
+  );
+
+  const tapTempo = useCallback(() => {
+    const now = performance.now();
+    const taps = tapTimesRef.current;
+    const last = taps[taps.length - 1];
+    if (last && now - last > 2500) taps.length = 0;
+    taps.push(now);
+    if (taps.length > 8) taps.shift();
+    if (taps.length < 2) return;
+    let total = 0;
+    for (let i = 1; i < taps.length; i++) total += taps[i] - taps[i - 1];
+    const avg = total / (taps.length - 1);
+    if (avg > 0) commitBpm(60000 / avg);
+  }, [commitBpm]);
 
   const toggleRecord = useCallback(async () => {
     setError(null);
@@ -333,8 +343,8 @@ export function App() {
       if (prefs.metroOn && prefs.countIn) {
         setState("arming");
         const barMs = (60_000 / prefs.bpm) * BEATS_PER_BAR;
-        const cached = orbWrapRef.current?.getBoundingClientRect();
-        if (cached) orbRectRef.current = cached;
+        const cached = recordBtnRef.current?.getBoundingClientRect();
+        if (cached) recordRectRef.current = cached;
         armTimerRef.current = window.setTimeout(async () => {
           armTimerRef.current = null;
           try {
@@ -398,7 +408,7 @@ export function App() {
 
   return (
     <div className="h-screen w-screen relative overflow-hidden">
-      <ShaderCanvas source={driftShader} active />
+      <ShaderCanvas source={brewShader} active />
       <div className="field-veil" />
 
       {error && (
@@ -449,34 +459,135 @@ export function App() {
 
         {/* MAIN STAGE */}
         <main className="flex-1 grid place-items-center px-6 pb-4">
-          <div className="w-full max-w-5xl grid grid-cols-1 md:grid-cols-[1fr_auto_1fr] gap-6 items-start">
-            {/* LEFT: tempo dial */}
-            <section className="panel p-5 flex flex-col items-center gap-6">
-              <TempoDial
-                bpm={prefs.bpm}
-                onChange={(bpm) => updatePrefs({ bpm })}
-                disabled={isBusy}
-              />
-            </section>
+          <div className="w-full max-w-5xl grid grid-cols-1 md:grid-cols-[1fr_1fr] gap-6 items-start">
+            {/* LEFT: combined transport */}
+            <section className="panel p-5 flex flex-col gap-5">
+              <div className="font-pixel text-[10px] uppercase tracking-widest text-cream-400">
+                transport
+              </div>
 
-            {/* CENTER: orb + beat strip */}
-            <section className="flex flex-col items-center gap-5">
-              <BeatStrip beatsPerBar={BEATS_PER_BAR} activeBeat={activeBeat} />
-              <div ref={orbWrapRef}>
-                <RecordOrb
-                  state={state}
-                  onClick={toggleRecord}
-                  barProgress={barProgress}
+              <div className="flex flex-col gap-3">
+                <div className="font-pixel text-[10px] uppercase tracking-widest text-cream-400">
+                  tempo
+                </div>
+                <div className="flex items-center justify-between gap-4 flex-wrap">
+                  <div className="flex items-baseline gap-2">
+                    {editingBpm ? (
+                      <input
+                        autoFocus
+                        type="number"
+                        min={40}
+                        max={240}
+                        value={bpmInput}
+                        onChange={(e) => setBpmInput(e.target.value)}
+                        onBlur={() => {
+                          const n = parseFloat(bpmInput);
+                          if (!isNaN(n)) commitBpm(n);
+                          setEditingBpm(false);
+                        }}
+                        onKeyDown={(e) => {
+                          if (e.key === "Enter") e.currentTarget.blur();
+                          if (e.key === "Escape") setEditingBpm(false);
+                        }}
+                        className="w-24 text-center bg-roast-950 border-2 border-roast-700 readout text-3xl font-pixel py-0.5"
+                      />
+                    ) : (
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setBpmInput(String(Math.round(prefs.bpm)));
+                          setEditingBpm(true);
+                        }}
+                        disabled={isBusy}
+                        className="readout text-4xl font-pixel px-2 py-0.5 hover:bg-roast-800/60 rounded transition-colors"
+                        title="type a BPM"
+                      >
+                        {Math.round(prefs.bpm).toString().padStart(3, "0")}
+                      </button>
+                    )}
+                    <span className="font-pixel text-[10px] uppercase tracking-widest text-cream-400">
+                      bpm
+                    </span>
+                  </div>
+                  <div className="flex gap-1">
+                    <button
+                      type="button"
+                      className="btn"
+                      disabled={isBusy}
+                      onClick={() => commitBpm(prefs.bpm - 1)}
+                      aria-label="decrease bpm"
+                    >
+                      −
+                    </button>
+                    <button
+                      type="button"
+                      className="btn"
+                      disabled={isBusy}
+                      onClick={() => commitBpm(prefs.bpm + 1)}
+                      aria-label="increase bpm"
+                    >
+                      +
+                    </button>
+                    <button
+                      type="button"
+                      className="btn"
+                      disabled={isBusy}
+                      onClick={tapTempo}
+                      title="tap to set tempo"
+                    >
+                      tap
+                    </button>
+                  </div>
+                </div>
+              </div>
+
+              <div className="h-px bg-cream-400/10" />
+
+              <div className="flex justify-center py-1">
+                <BeatStrip
+                  beatsPerBar={BEATS_PER_BAR}
+                  activeBeat={activeBeat}
                 />
               </div>
-              <div className="font-pixel text-[11px] uppercase tracking-[0.25em] text-cream-400">
-                {state === "recording"
-                  ? "rolling"
-                  : state === "arming"
-                    ? "ready in…"
-                    : state === "stopping"
-                      ? "writing wav"
-                      : "press to record"}
+
+              <div className="h-px bg-cream-400/10" />
+
+              <div className="flex flex-col gap-3">
+                <div className="font-pixel text-[10px] uppercase tracking-widest text-cream-400">
+                  record
+                </div>
+                <div className="flex items-center justify-between gap-4 flex-wrap">
+                  <button
+                    ref={recordBtnRef}
+                    type="button"
+                    onClick={toggleRecord}
+                    disabled={state === "stopping"}
+                    className={`btn ${state === "recording" ? "danger" : ""}`}
+                    title="space"
+                  >
+                    {state === "recording"
+                      ? "■ stop"
+                      : state === "arming"
+                        ? "× cancel"
+                        : "● rec"}
+                  </button>
+                  <div className="flex items-baseline gap-2">
+                    <span
+                      className={`readout text-2xl font-pixel ${state === "recording" ? "rec" : "dim"}`}
+                    >
+                      {formatDuration(elapsed)}
+                    </span>
+                    <span className="font-pixel text-[10px] uppercase tracking-widest text-cream-400">
+                      {state === "recording"
+                        ? "rolling"
+                        : state === "arming"
+                          ? "count-in"
+                          : state === "stopping"
+                            ? "writing wav"
+                            : "ready"}
+                    </span>
+                  </div>
+                </div>
               </div>
             </section>
 

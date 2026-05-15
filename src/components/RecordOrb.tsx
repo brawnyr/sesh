@@ -33,7 +33,12 @@ export function RecordOrb({ state, onClick, barProgress, disabled }: Props) {
         title="space"
       >
         <span className="orb-ring" />
-        <span className="orb-disc" />
+        <span className="orb-face">
+          <span className="orb-disc" />
+          <span className="orb-label">
+            {recording ? "stop" : "rec"}
+          </span>
+        </span>
       </button>
 
       <svg
