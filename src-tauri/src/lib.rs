@@ -4,7 +4,7 @@ use audio::{AudioController, DeviceState, InputDevice, TakeInfo};
 use parking_lot::Mutex;
 use serde::{Deserialize, Serialize};
 use std::fs;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use tauri::{Manager, State, WindowEvent};
 
 pub struct AppState {
@@ -15,6 +15,55 @@ pub struct AppState {
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct Settings {
     pub takes_dir: String,
+}
+
+/// JSON shape written to disk. Forward-compatible: new optional fields can be
+/// appended without breaking older configs (serde defaults them to `None`).
+#[derive(Clone, Debug, Default, Serialize, Deserialize)]
+struct StoredSettings {
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    takes_dir: Option<String>,
+}
+
+/// Absolute path to the settings JSON. `None` only if `dirs::config_dir()`
+/// returns nothing (very rare — headless / unusual environments).
+fn settings_path() -> Option<PathBuf> {
+    dirs::config_dir().map(|d| d.join("sesh").join("settings.json"))
+}
+
+fn load_stored_settings() -> StoredSettings {
+    let Some(path) = settings_path() else {
+        return StoredSettings::default();
+    };
+    let Ok(text) = fs::read_to_string(&path) else {
+        return StoredSettings::default();
+    };
+    serde_json::from_str::<StoredSettings>(&text).unwrap_or_default()
+}
+
+/// Persist the entire settings blob. Caller is responsible for merging with
+/// any previously-stored fields before calling — we overwrite atomically.
+fn write_stored_settings(stored: &StoredSettings) -> std::io::Result<()> {
+    let Some(path) = settings_path() else {
+        return Err(std::io::Error::new(
+            std::io::ErrorKind::NotFound,
+            "no config dir",
+        ));
+    };
+    if let Some(parent) = path.parent() {
+        fs::create_dir_all(parent)?;
+    }
+    let text = serde_json::to_string_pretty(stored)
+        .map_err(|e| std::io::Error::new(std::io::ErrorKind::InvalidData, e))?;
+    fs::write(&path, text)
+}
+
+fn persist_takes_dir(dir: &Path) {
+    let mut stored = load_stored_settings();
+    stored.takes_dir = Some(dir.to_string_lossy().to_string());
+    if let Err(e) = write_stored_settings(&stored) {
+        eprintln!("failed to write settings.json: {}", e);
+    }
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
@@ -52,6 +101,8 @@ fn set_takes_dir(state: State<AppState>, dir: String) -> Result<Settings, String
     let path = PathBuf::from(&dir);
     fs::create_dir_all(&path).map_err(|e| e.to_string())?;
     *state.takes_dir.lock() = path.clone();
+    // Best-effort persist; we already have the chosen dir live in memory.
+    persist_takes_dir(&path);
     Ok(Settings {
         takes_dir: path.to_string_lossy().to_string(),
     })
@@ -156,7 +207,15 @@ fn open_path(path: &std::path::Path) -> std::io::Result<()> {
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
-    let initial_dir = audio::default_takes_dir();
+    // Prefer the previously-saved takes_dir if it still resolves to a real
+    // directory; otherwise fall back to the default and create it.
+    let stored = load_stored_settings();
+    let initial_dir = stored
+        .takes_dir
+        .as_deref()
+        .map(PathBuf::from)
+        .filter(|p| p.is_dir())
+        .unwrap_or_else(audio::default_takes_dir);
     let _ = fs::create_dir_all(&initial_dir);
 
     tauri::Builder::default()

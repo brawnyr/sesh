@@ -88,3 +88,10 @@ export function onMeter(
   if (!hasTauri) return Promise.resolve(() => {});
   return listen<MeterReading>("sesh:meter", (e) => fn(e.payload));
 }
+
+export function onWriteError(
+  fn: (message: string) => void,
+): Promise<UnlistenFn> {
+  if (!hasTauri) return Promise.resolve(() => {});
+  return listen<string>("sesh:write_error", (e) => fn(e.payload));
+}

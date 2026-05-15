@@ -6,13 +6,12 @@ import {
   type ClickVoice,
 } from "./lib/metronome";
 import {
-  onMeter,
+  onWriteError,
   seshApi,
   type InputDevice,
   type TakeMeta,
 } from "./lib/tauri";
 import { clamp, formatDuration } from "./lib/util";
-import type { RecState } from "./lib/state";
 import { ClickPicker } from "./components/ClickPicker";
 import { DevicePanel } from "./components/DevicePanel";
 import { BeatStrip } from "./components/BeatStrip";
@@ -20,6 +19,8 @@ import { VuMeter } from "./components/VuMeter";
 import { Splash, type SplashEvent } from "./components/Splash";
 import { TakesShelf } from "./components/TakesShelf";
 import { RecordOrb } from "./components/RecordOrb";
+import { useLevelMeter } from "./hooks/useLevelMeter";
+import { useRecorder } from "./hooks/useRecorder";
 
 const PREFS_KEY = "sesh:prefs:v1";
 
@@ -70,22 +71,16 @@ export function App() {
   const metronome = metronomeRef.current;
 
   const [prefs, setPrefs] = useState<Prefs>(() => loadPrefs());
-  const [state, setState] = useState<RecState>("idle");
   const [activeBeat, setActiveBeat] = useState<number | null>(null);
   const [devices, setDevices] = useState<InputDevice[]>([]);
   const [takes, setTakes] = useState<TakeMeta[]>([]);
   const [takesDir, setTakesDir] = useState<string>("");
-  const [peakDb, setPeakDb] = useState(-90);
-  const [rmsDb, setRmsDb] = useState(-90);
-  const [peakHoldDb, setPeakHoldDb] = useState(-90);
-  const [clipped, setClipped] = useState(false);
-  const [elapsed, setElapsed] = useState(0);
   const [error, setError] = useState<string | null>(null);
   const [splash, setSplash] = useState<SplashEvent | null>(null);
 
-  const recordStartRef = useRef<number | null>(null);
+  const { peakDb, rmsDb, peakHoldDb, clipped } = useLevelMeter();
+
   const barStartRef = useRef<number | null>(null);
-  const armTimerRef = useRef<number | null>(null);
   const recordRectRef = useRef<DOMRect | null>(null);
   const recordBtnRef = useRef<HTMLDivElement | null>(null);
   const tapTimesRef = useRef<number[]>([]);
@@ -124,93 +119,25 @@ export function App() {
   }, [metronome, prefs.bpm]);
 
   useEffect(() => {
-    const DB_FLOOR = -90;
-    const HOLD_MS = 1500;
-    const HOLD_DECAY_DB_PER_S = 12;
-    const RELEASE_DB_PER_S = 26;
-    const CLIP_HIDE_MS = 700;
-
-    let unlisten: (() => void) | null = null;
-    let raf = 0;
-    let lastFrame = performance.now();
-    let displayPeak = DB_FLOOR;
-    let displayRms = DB_FLOOR;
-    let targetPeak = DB_FLOOR;
-    let targetRms = DB_FLOOR;
-    let hold = DB_FLOOR;
-    let holdSetAt = 0;
-    let clipHideAt = 0;
-
-    const animate = (now: number) => {
-      raf = requestAnimationFrame(animate);
-      const dt = Math.min(0.1, (now - lastFrame) / 1000);
-      lastFrame = now;
-
-      displayPeak =
-        targetPeak >= displayPeak
-          ? targetPeak
-          : Math.max(targetPeak, displayPeak - RELEASE_DB_PER_S * dt);
-      displayRms =
-        targetRms >= displayRms
-          ? targetRms
-          : Math.max(targetRms, displayRms - RELEASE_DB_PER_S * dt);
-
-      if (targetPeak >= hold) {
-        hold = targetPeak;
-        holdSetAt = now;
-      } else if (now - holdSetAt > HOLD_MS) {
-        hold = Math.max(targetPeak, hold - HOLD_DECAY_DB_PER_S * dt);
-      }
-
-      setPeakDb(displayPeak);
-      setRmsDb(displayRms);
-      setPeakHoldDb(hold);
-
-      if (clipHideAt && now > clipHideAt) {
-        clipHideAt = 0;
-        setClipped(false);
-      }
-    };
-    raf = requestAnimationFrame(animate);
-
-    onMeter((r) => {
-      targetPeak = r.peak_db;
-      targetRms = r.rms_db;
-      if (r.clipped) {
-        clipHideAt = performance.now() + CLIP_HIDE_MS;
-        setClipped(true);
-      }
-    }).then((u) => {
-      unlisten = u;
-    });
-
-    return () => {
-      cancelAnimationFrame(raf);
-      unlisten?.();
-    };
-  }, []);
-
-  useEffect(() => {
-    if (state === "idle") {
-      setElapsed(0);
-      return;
-    }
-    let raf = 0;
-    const tick = () => {
-      raf = requestAnimationFrame(tick);
-      const now = performance.now();
-      if (state === "recording" && recordStartRef.current !== null) {
-        setElapsed((now - recordStartRef.current) / 1000);
-      }
-    };
-    raf = requestAnimationFrame(tick);
-    return () => cancelAnimationFrame(raf);
-  }, [state]);
-
-  useEffect(() => {
     void refreshDevices();
     void refreshSettings();
     void refreshTakes();
+  }, []);
+
+  // Surface disk write failures from the audio worker as the error banner.
+  useEffect(() => {
+    let cancelled = false;
+    let unlistenFn: (() => void) | null = null;
+    onWriteError((msg) => {
+      setError(`disk write failed: ${msg}`);
+    }).then((u) => {
+      if (cancelled) u();
+      else unlistenFn = u;
+    });
+    return () => {
+      cancelled = true;
+      unlistenFn?.();
+    };
   }, []);
 
   useEffect(() => {
@@ -253,17 +180,6 @@ export function App() {
     }
   }
 
-  const cancelArming = useCallback(() => {
-    if (armTimerRef.current !== null) {
-      clearTimeout(armTimerRef.current);
-      armTimerRef.current = null;
-    }
-    metronome.stop();
-    setState("idle");
-    setActiveBeat(null);
-    barStartRef.current = null;
-  }, [metronome]);
-
   const triggerSplash = useCallback(() => {
     const rect =
       recordRectRef.current ?? recordBtnRef.current?.getBoundingClientRect();
@@ -291,66 +207,27 @@ export function App() {
     if (avg > 0) commitBpm(60000 / avg);
   }, [commitBpm]);
 
-  const toggleRecord = useCallback(async () => {
-    setError(null);
-    if (state === "stopping") return;
-
-    if (state === "arming") {
-      cancelArming();
-      return;
-    }
-
-    if (state === "recording") {
-      setState("stopping");
-      try {
-        await seshApi.stopRecording();
-      } catch (e) {
-        setError(String(e));
-      }
-      if (prefs.metroOn) metronome.stop();
-      recordStartRef.current = null;
+  const { state, elapsed, toggleRecord } = useRecorder({
+    metronome,
+    bpm: prefs.bpm,
+    metroOn: prefs.metroOn,
+    countIn: prefs.countIn,
+    onError: setError,
+    onStopped: useCallback(() => {
       barStartRef.current = null;
       setActiveBeat(null);
       triggerSplash();
-      setState("idle");
       void refreshTakes();
-      return;
-    }
-
-    try {
-      if (prefs.metroOn) await metronome.start();
-
-      const beginCapture = async () => {
-        await seshApi.startRecording();
-        recordStartRef.current = performance.now();
-        if (!barStartRef.current) barStartRef.current = performance.now();
-        setState("recording");
-      };
-
-      if (prefs.metroOn && prefs.countIn) {
-        setState("arming");
-        const barMs = (60_000 / prefs.bpm) * BEATS_PER_BAR;
-        const cached = recordBtnRef.current?.getBoundingClientRect();
-        if (cached) recordRectRef.current = cached;
-        armTimerRef.current = window.setTimeout(async () => {
-          armTimerRef.current = null;
-          try {
-            await beginCapture();
-          } catch (e) {
-            setError(String(e));
-            metronome.stop();
-            setState("idle");
-          }
-        }, barMs);
-      } else {
-        await beginCapture();
-      }
-    } catch (e) {
-      setError(String(e));
-      metronome.stop();
-      setState("idle");
-    }
-  }, [state, prefs, metronome, cancelArming, triggerSplash]);
+    }, [triggerSplash]),
+    onArmStart: useCallback(() => {
+      const cached = recordBtnRef.current?.getBoundingClientRect();
+      if (cached) recordRectRef.current = cached;
+    }, []),
+    onArmExit: useCallback(() => {
+      setActiveBeat(null);
+      barStartRef.current = null;
+    }, []),
+  });
 
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
@@ -393,7 +270,16 @@ export function App() {
   return (
     <div className="h-screen w-screen relative overflow-hidden">
       {error && (
-        <div className="banner absolute top-3 left-1/2 -translate-x-1/2 z-50 px-3 py-1.5">
+        <div
+          className="banner absolute top-3 left-1/2 -translate-x-1/2 z-50 px-3 py-1.5 cursor-pointer"
+          role="button"
+          tabIndex={0}
+          onClick={() => setError(null)}
+          onKeyDown={(e) => {
+            if (e.key === "Enter" || e.key === " ") setError(null);
+          }}
+          title="click to dismiss"
+        >
           {error}
         </div>
       )}
