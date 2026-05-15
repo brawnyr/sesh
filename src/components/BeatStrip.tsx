@@ -5,7 +5,7 @@ type Props = {
 
 export function BeatStrip({ beatsPerBar, activeBeat }: Props) {
   return (
-    <div className="flex items-end gap-1.5" aria-label="beats">
+    <div className="flex items-center gap-2" aria-label="beats">
       {Array.from({ length: beatsPerBar }, (_, i) => {
         const lit = activeBeat === i;
         const downbeat = i === 0;
@@ -13,7 +13,7 @@ export function BeatStrip({ beatsPerBar, activeBeat }: Props) {
           <div
             key={i}
             className={[
-              "beat-cell",
+              "beat-dab",
               downbeat ? "downbeat" : "",
               lit ? "lit" : "",
             ]
