@@ -1,4 +1,3 @@
-import { useEffect, useRef, useState } from "react";
 import type { InputDevice } from "../lib/tauri";
 
 type Props = {
@@ -16,97 +15,40 @@ export function DevicePanel({
   onRefresh,
   disabled,
 }: Props) {
-  const [open, setOpen] = useState(false);
-  const containerRef = useRef<HTMLDivElement | null>(null);
-
-  useEffect(() => {
-    if (!open) return;
-    const onDocClick = (e: MouseEvent) => {
-      if (!containerRef.current?.contains(e.target as Node)) setOpen(false);
-    };
-    const onEsc = (e: KeyboardEvent) => {
-      if (e.key === "Escape") setOpen(false);
-    };
-    document.addEventListener("mousedown", onDocClick);
-    document.addEventListener("keydown", onEsc);
-    return () => {
-      document.removeEventListener("mousedown", onDocClick);
-      document.removeEventListener("keydown", onEsc);
-    };
-  }, [open]);
-
-  const current = devices.find((d) => d.name === selected) ?? null;
-  const label = current ? current.name : selected ?? "no input selected";
-
   return (
-    <div className="flex flex-col gap-2 relative min-w-0" ref={containerRef}>
-      <div className="flex gap-1 min-w-0">
-        <button
-          type="button"
-          className="btn flex-1 min-w-0 justify-between"
-          onClick={() => setOpen((o) => !o)}
+    <div className="flex flex-col gap-1">
+      <div className="flex gap-1">
+        <select
+          value={selected ?? ""}
           disabled={disabled}
-          title={current?.name ?? ""}
-        >
-          <span className="truncate font-mono normal-case tracking-normal min-w-0 flex-1 text-left">
-            {label}
-          </span>
-          <span className="font-mono text-[10px] normal-case tracking-normal shrink-0 text-[var(--bone-soft)]">
-            {current
-              ? `${current.channels}ch · ${(current.sample_rate / 1000).toFixed(1)}k`
-              : "—"}
-          </span>
-        </button>
-        <button
-          type="button"
-          className="btn ghost"
-          onClick={() => {
-            onRefresh();
-            setOpen(true);
+          onChange={(e) => onSelect(e.target.value)}
+          style={{
+            flex: 1,
+            background: "#fff",
+            border: "1px solid #000",
+            padding: "4px 6px",
+            fontFamily: "inherit",
+            fontSize: "inherit",
+            color: "#000",
           }}
-          disabled={disabled}
-          title="rescan devices"
-          aria-label="rescan devices"
         >
-          ↻
+          {devices.length === 0 && <option value="">no inputs</option>}
+          {devices.map((d) => (
+            <option key={d.name} value={d.name}>
+              {d.is_default ? "* " : ""}
+              {d.name} [{d.channels || "?"}ch {d.sample_rate ? `${(d.sample_rate / 1000).toFixed(1)}k` : "?"}]
+            </option>
+          ))}
+        </select>
+        <button
+          type="button"
+          onClick={onRefresh}
+          disabled={disabled}
+          title="rescan"
+        >
+          rescan
         </button>
       </div>
-
-      {open && (
-        <div className="popover scrollbar-thin" role="listbox">
-          {devices.length === 0 && (
-            <div className="px-3 py-3 font-mono text-sm text-[var(--bone-soft)]">
-              no inputs detected — check that your scarlett is plugged in and
-              not claimed by another app.
-            </div>
-          )}
-          {devices.map((d) => {
-            const isSelected = d.name === selected;
-            return (
-              <button
-                key={d.name}
-                type="button"
-                role="option"
-                aria-selected={isSelected}
-                onClick={() => {
-                  onSelect(d.name);
-                  setOpen(false);
-                }}
-                className={`popover-item ${isSelected ? "selected" : ""}`}
-              >
-                <span className="truncate">
-                  {d.is_default ? "★ " : ""}
-                  {d.name}
-                </span>
-                <span className="shrink-0 text-[var(--bone-soft)]">
-                  {d.channels || "?"}ch ·{" "}
-                  {d.sample_rate ? `${(d.sample_rate / 1000).toFixed(1)}k` : "?"}
-                </span>
-              </button>
-            );
-          })}
-        </div>
-      )}
     </div>
   );
 }

@@ -7,28 +7,34 @@ type Props = {
 };
 
 export function RecordOrb({ state, onClick, disabled }: Props) {
-  const armed = state === "arming";
   const recording = state === "recording";
+  const armed = state === "arming";
   const stopping = state === "stopping";
+
+  const label = recording
+    ? "stop"
+    : armed
+      ? "cancel"
+      : stopping
+        ? "saving"
+        : "record";
 
   return (
     <button
       type="button"
-      className={`blob ${state}`}
       onClick={onClick}
       disabled={disabled || stopping}
-      aria-label={
-        recording
-          ? "stop recording"
-          : armed
-            ? "cancel count-in"
-            : "start recording"
-      }
+      aria-label={label}
       title="space"
+      className={recording || armed ? "active" : ""}
+      style={{
+        padding: "10px 24px",
+        fontWeight: 700,
+        letterSpacing: "0.1em",
+        textTransform: "uppercase",
+      }}
     >
-      <span className="blob-body">
-        <span className="blob-glyph">{recording ? "stop" : "rec"}</span>
-      </span>
+      {label}
     </button>
   );
 }
