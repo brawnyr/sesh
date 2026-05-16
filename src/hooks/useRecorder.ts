@@ -135,7 +135,7 @@ export function useRecorder({
       if (metroOn && countIn) {
         onArmStart?.();
         setState("arming");
-        const barMs = (60_000 / bpm) * BEATS_PER_BAR;
+        const barMs = (60_000 / bpm) * BEATS_PER_BAR * 2;
         armTimerRef.current = window.setTimeout(async () => {
           armTimerRef.current = null;
           try {

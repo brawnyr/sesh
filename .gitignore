@@ -22,3 +22,6 @@ src-tauri/gen/schemas
 
 # logs
 *.log
+
+# local design / planning notes
+project-notes
